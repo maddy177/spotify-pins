@@ -16,6 +16,15 @@ const subtitle = document.getElementById("subtitle");
 // ---------- State: things the page needs to remember ----------
 let data = null;            // everything the server sent us
 let selectedPlaylist = "";  // "" means "all playlists"
+let itemsById = new Map();  // song id -> what's currently shown for that song
+let activePill = null;      // the "+N more" button whose popup is open
+
+// The popup is created once and reused. It lives outside the list so that
+// the list's scrolling can't clip it.
+const popup = document.createElement("div");
+popup.className = "popup";
+popup.hidden = true;
+document.body.appendChild(popup);
 
 // ---------- Small helper functions ----------
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -51,7 +60,7 @@ function compareText(a, b) {
   return (a || "").localeCompare(b || "", undefined, { sensitivity: "base" });
 }
 
-// ---------- The sort options (same five as before) ----------
+// ---------- The sort options ----------
 const SORTERS = {
   "date-desc": (a, b) => b.latest.localeCompare(a.latest),
   "date-asc": (a, b) => a.latest.localeCompare(b.latest),
@@ -97,7 +106,7 @@ function renderRow({ song, apps, latest }) {
   const extra = apps.length - 1;
   const pill =
     extra > 0
-      ? `<button class="more" data-song="${escapeHtml(song.id)}">+${extra} more</button>`
+      ? `<button class="more" data-song="${escapeHtml(song.id)}" aria-expanded="false">+${extra} more</button>`
       : "";
   const cover = song.image
     ? `<img class="cover" src="${escapeHtml(song.image)}" alt="" width="40" height="40" loading="lazy">`
@@ -123,8 +132,11 @@ function renderRow({ song, apps, latest }) {
 
 // ---------- Step 3: filter, sort, draw ----------
 function update() {
+  closePopup(); // the list is about to be redrawn, so any open popup is stale
+
   const list = buildSongList();
   list.sort(SORTERS[sortSelect.value]);
+  itemsById = new Map(list.map((item) => [item.song.id, item]));
 
   // Heading + the small line under it
   const playlistsShown = new Set();
@@ -160,6 +172,71 @@ function renderPlaylistList() {
     .join("");
 }
 
+// Used by the sidebar AND by the popup: jump into one playlist
+function selectPlaylist(id) {
+  selectedPlaylist = id;
+  for (const li of playlistList.children) {
+    const isThis = li.dataset.id === id;
+    li.classList.toggle("active", isThis);
+    if (isThis) li.scrollIntoView({ block: "nearest" });
+  }
+  update();
+}
+
+// ---------- The "+N more" popup ----------
+function openPopup(pill) {
+  const item = itemsById.get(pill.dataset.song);
+  if (!item) return;
+
+  const count = item.apps.length;
+  const entries = item.apps
+    .map((p) => {
+      const others = p.by_me
+        ? ""
+        : ` <span title="${escapeHtml(p.added_by)}">(added by someone else)</span>`;
+      return (
+        `<li><button class="popup-item" data-id="${escapeHtml(p.id)}">` +
+        `<span class="popup-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>` +
+        `<span class="popup-date">${formatDate(p.added_at)}${others}</span>` +
+        `</button></li>`
+      );
+    })
+    .join("");
+
+  popup.innerHTML =
+    `<div class="popup-head">In ${count} playlists</div>` +
+    `<ul>${entries}</ul>` +
+    `<div class="popup-hint">Click a playlist to open it</div>`;
+  popup.hidden = false;
+
+  // Place it under the pill, but keep it on screen
+  const rect = pill.getBoundingClientRect();
+  const width = popup.offsetWidth;
+  const height = popup.offsetHeight;
+  const margin = 12;
+
+  let left = Math.min(rect.left, window.innerWidth - width - margin);
+  left = Math.max(margin, left);
+
+  let top = rect.bottom + 6;
+  if (top + height > window.innerHeight - margin) {
+    top = Math.max(margin, rect.top - height - 6); // not enough room below: flip above
+  }
+  popup.style.left = `${left}px`;
+  popup.style.top = `${top}px`;
+
+  activePill = pill;
+  pill.setAttribute("aria-expanded", "true");
+}
+
+function closePopup() {
+  popup.hidden = true;
+  if (activePill) {
+    activePill.setAttribute("aria-expanded", "false");
+    activePill = null;
+  }
+}
+
 // ---------- React to the person using the page ----------
 let searchTimer;
 searchBox.addEventListener("input", () => {
@@ -172,13 +249,37 @@ addedBySelect.addEventListener("change", update);
 
 playlistList.addEventListener("click", (event) => {
   const item = event.target.closest("li");
-  if (!item) return;
-  selectedPlaylist = item.dataset.id;
-  for (const li of playlistList.children) {
-    li.classList.toggle("active", li === item);
-  }
-  update();
+  if (item) selectPlaylist(item.dataset.id);
 });
+
+// One click listener for the whole page decides what a click meant
+document.addEventListener("click", (event) => {
+  const pill = event.target.closest(".more");
+  if (pill) {
+    if (pill === activePill) closePopup();
+    else {
+      closePopup();
+      openPopup(pill);
+    }
+    return;
+  }
+
+  const entry = event.target.closest(".popup-item");
+  if (entry) {
+    selectPlaylist(entry.dataset.id);
+    return;
+  }
+
+  if (!event.target.closest(".popup")) closePopup();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closePopup();
+});
+
+// A fixed-position popup would drift away from its pill, so close it instead
+rowsBox.addEventListener("scroll", closePopup, { passive: true });
+window.addEventListener("resize", closePopup);
 
 // ---------- Start: fetch the songs from our server ----------
 async function init() {
