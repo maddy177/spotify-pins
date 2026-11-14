@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spotify Pins</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- LEFT PANEL: filters -->
+    <aside class="panel sidebar">
+      <h1 class="logo">🎧 Spotify Pins</h1>
+
+      <label class="field">
+        <span>Search</span>
+        <input type="text" placeholder="Song, artist, album or playlist">
+      </label>
+
+      <label class="field">
+        <span>Sort by</span>
+        <select>
+          <option>Date added (new → old)</option>
+          <option>Date added (old → new)</option>
+          <option>Title (A → Z)</option>
+          <option>Artist (A → Z)</option>
+          <option>Most playlists first</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Added by</span>
+        <select>
+          <option>Added by me</option>
+          <option>Added by others</option>
+          <option>Everyone</option>
+        </select>
+      </label>
+
+      <div class="field">
+        <span>Playlists</span>
+        <ul class="playlist-list">
+          <li class="active">All playlists</li>
+          <li>ethereal</li>
+          <li>Stoned</li>
+          <li>fuck it we ball</li>
+          <li>PLOT TWIST</li>
+          <li>Psychedelics</li>
+          <li>Chodbhangda</li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- MAIN PANEL: the song list -->
+    <main class="panel main">
+      <header class="main-header">
+        <h2>All Songs</h2>
+        <p class="subtitle">2,067 songs · 47 playlists · last synced 14 Nov 2026</p>
+      </header>
+
+      <div class="table">
+        <div class="row head">
+          <div class="cell">Title</div>
+          <div class="cell album">Album</div>
+          <div class="cell">Playlists</div>
+          <div class="cell date">Date added</div>
+        </div>
+
+        <div class="rows">
+
+          <div class="row">
+            <div class="cell song">
+              <div class="cover" style="background: #6a4c93"></div>
+              <div class="song-text">
+                <div class="title">Turbulence</div>
+                <div class="artist">Viepsa Arora</div>
+              </div>
+            </div>
+            <div class="cell album">Turbulence</div>
+            <div class="cell playlists">
+              <span class="pl-name">ethereal</span>
+            </div>
+            <div class="cell date">14 Nov 2026</div>
+          </div>
+
+          <div class="row">
+            <div class="cell song">
+              <div class="cover" style="background: #1982c4"></div>
+              <div class="song-text">
+                <div class="title">The Best I Ever Had</div>
+                <div class="artist">Limi</div>
+              </div>
+            </div>
+            <div class="cell album">The Best I Ever Had</div>
+            <div class="cell playlists">
+              <span class="pl-name">Stoned</span>
+            </div>
+            <div class="cell date">13 Nov 2026</div>
+          </div>
+
+          <div class="row">
+            <div class="cell song">
+              <div class="cover" style="background: #8ac926"></div>
+              <div class="song-text">
+                <div class="title">Not You Too (feat. Chris Brown)</div>
+                <div class="artist">Drake, Chris Brown</div>
+              </div>
+            </div>
+            <div class="cell album">Honestly, Nevermind</div>
+            <div class="cell playlists">
+              <span class="pl-name">Stoned</span>
+              <button class="more">+1 more</button>
+            </div>
+            <div class="cell date">12 Nov 2026</div>
+          </div>
+
+          <div class="row">
+            <div class="cell song">
+              <div class="cover" style="background: #ff595e"></div>
+              <div class="song-text">
+                <div class="title">Lover/Friend</div>
+                <div class="artist">KAYTRANADA, Rochelle Jordan</div>
+              </div>
+            </div>
+            <div class="cell album">Timeless</div>
+            <div class="cell playlists">
+              <span class="pl-name">Psychedelics</span>
+            </div>
+            <div class="cell date">12 Nov 2026</div>
+          </div>
+
+          <div class="row">
+            <div class="cell song">
+              <div class="cover" style="background: #ffca3a"></div>
+              <div class="song-text">
+                <div class="title">Jiya Lage Na</div>
+                <div class="artist">Sona Mohapatra, Ravindra Upadhyay, Ram Sampath, Javed Akhtar</div>
+              </div>
+            </div>
+            <div class="cell album">Jiya Lage Na (From the album with a very very long name that needs cutting)</div>
+            <div class="cell playlists">
+              <span class="pl-name">PLOT TWIST</span>
+            </div>
+            <div class="cell date">12 Nov 2026</div>
+          </div>
+
+          <div class="row">
+            <div class="cell song">
+              <div class="cover" style="background: #6a4c93"></div>
+              <div class="song-text">
+                <div class="title">XO Tour Llif3</div>
+                <div class="artist">Lil Uzi Vert</div>
+              </div>
+            </div>
+            <div class="cell album">Luv Is Rage 2</div>
+            <div class="cell playlists">
+              <span class="pl-name">Fucking hell</span>
+              <button class="more">+1 more</button>
+            </div>
+            <div class="cell date">12 Nov 2026</div>
+          </div>
+
+          <div class="row">
+            <div class="cell song">
+              <div class="cover" style="background: #1982c4"></div>
+              <div class="song-text">
+                <div class="title">You (feat. Travis Scott)</div>
+                <div class="artist">Don Toliver, Travis Scott</div>
+              </div>
+            </div>
+            <div class="cell album">Life of a DON</div>
+            <div class="cell playlists">
+              <span class="pl-name">Stoned</span>
+              <button class="more">+4 more</button>
+            </div>
+            <div class="cell date">09 Nov 2026</div>
+          </div>
+
+          <div class="row">
+            <div class="cell song">
+              <div class="cover" style="background: #ff595e"></div>
+              <div class="song-text">
+                <div class="title">The Hills</div>
+                <div class="artist">The Weeknd</div>
+              </div>
+            </div>
+            <div class="cell album">Beauty Behind The Madness</div>
+            <div class="cell playlists">
+              <span class="pl-name">ﾒ𝟶</span>
+            </div>
+            <div class="cell date">29 Apr 2022</div>
+          </div>
+
+        </div>
+      </div>
+    </main>
+
+  </div>
+</body>
+</html>

@@ -19,7 +19,7 @@ def get_connection():
 
 @app.route("/")
 def home():
-    return "Spotify Pins server is running. Try <a href='/api/songs'>/api/songs</a>"
+    return app.send_static_file("index.html")
 
 
 @app.route("/api/songs")

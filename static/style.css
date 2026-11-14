@@ -1,0 +1,301 @@
+/* ---------- Colors and sizes, defined once, used everywhere ---------- */
+:root {
+  --bg: #000000;
+  --panel: #121212;
+  --panel-2: #1f1f1f;
+  --hover: #2a2a2a;
+  --border: #2a2a2a;
+  --text: #ffffff;
+  --muted: #b3b3b3;
+  --green: #1db954;
+  --radius: 8px;
+
+  /* The four columns of the song list: title | album | playlists | date.
+     minmax(0, ...) is what stops long text from forcing a sideways scroll. */
+  --cols: minmax(0, 4fr) minmax(0, 2.4fr) minmax(0, 2.6fr) 110px;
+}
+
+/* ---------- Reset: remove the browser's default spacing ---------- */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+}
+
+/* Thin dark scrollbars, to match the theme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #535353 transparent;
+}
+
+/* ---------- Page layout: two panels side by side ---------- */
+.app {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px;
+}
+
+.panel {
+  background: var(--panel);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ---------- Left panel ---------- */
+.sidebar {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.logo {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field > span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+input,
+select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--green);
+}
+
+/* The playlist list takes the remaining height and scrolls by itself */
+.sidebar .field:last-child {
+  flex: 1;
+  min-height: 0;
+}
+
+.playlist-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.playlist-list li {
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playlist-list li:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.playlist-list li.active {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* ---------- Right panel ---------- */
+.main {
+  display: flex;
+  flex-direction: column;
+}
+
+.main-header {
+  padding: 28px 24px 20px;
+  background: linear-gradient(to bottom, rgba(29, 185, 84, 0.28), transparent);
+}
+
+.main-header h2 {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  margin-top: 6px;
+  color: var(--muted);
+}
+
+/* ---------- The song list ---------- */
+.table {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 8px 8px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: var(--cols);
+  gap: 16px;
+  align-items: center;
+  padding: 0 16px;
+}
+
+.row.head {
+  flex-shrink: 0;
+  height: 36px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Only this part scrolls; the header row above it stays put */
+.rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.rows .row {
+  height: 56px;
+  border-radius: 6px;
+}
+
+.rows .row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Every cell cuts long text with "..." instead of growing wider */
+.cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.rows .row:hover .cell {
+  color: var(--text);
+}
+
+.cell.song {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cover {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.song-text {
+  min-width: 0;
+}
+
+.title,
+.artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.artist {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.cell.playlists {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pl-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The "+2 more" pill (it'll open the popup in a later step) */
+.more {
+  flex-shrink: 0;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.more:hover {
+  background: var(--green);
+  color: #000;
+}
+
+/* ---------- Smaller screens ---------- */
+@media (max-width: 1100px) {
+  :root {
+    --cols: minmax(0, 4fr) minmax(0, 2.6fr) 110px;
+  }
+  .cell.album {
+    display: none;
+  }
+}
+
+@media (max-width: 800px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .sidebar {
+    max-height: 38vh;
+    overflow-y: auto;
+  }
+}
