@@ -115,6 +115,7 @@ select:focus {
 }
 
 .playlist-list li {
+  flex-shrink: 0;
   padding: 8px 10px;
   border-radius: 6px;
   color: var(--muted);
