@@ -12,12 +12,20 @@ const playlistList = document.getElementById("playlist-list");
 const rowsBox = document.getElementById("rows");
 const heading = document.getElementById("heading");
 const subtitle = document.getElementById("subtitle");
+const tabPlaylists = document.getElementById("tab-playlists");
+const tabArtists = document.getElementById("tab-artists");
+const artistList = document.getElementById("artist-list");
+const artistFilter = document.getElementById("artist-filter");
 
 // ---------- State: things the page needs to remember ----------
 let data = null;            // everything the server sent us
 let selectedPlaylist = "";  // "" means "all playlists"
 let itemsById = new Map();  // song id -> what's currently shown for that song
 let currentList = [];       // the songs on screen, in the order shown (the player uses this)
+let selectedArtist = "";    // "" means "all artists"
+let artistNames = new Map();// artist id -> name
+let hasArtists = false;     // false until sync.py has been run with artist support
+let lastRenderAt = 0;       // when the list was last redrawn (see the double-click guard)
 let activePill = null;      // the "+N more" button whose popup is open
 
 // The popup is created once and reused. It lives outside the list so that
@@ -86,6 +94,8 @@ function buildSongList() {
   const result = [];
 
   for (const song of data.songs) {
+    if (selectedArtist && !(song.artist_list || []).some((a) => a.id === selectedArtist)) continue;
+
     // "apps" = this song's playlist entries that survive the filters
     let apps = song.playlists;
     if (mode === "me") apps = apps.filter((p) => p.by_me);
@@ -111,6 +121,17 @@ function buildSongList() {
 }
 
 // ---------- Step 2: turn one song into a row of HTML ----------
+
+// Each artist becomes its own clickable name. (If the database has no artist
+// data yet, we fall back to the plain text.)
+function renderArtists(song) {
+  const list = song.artist_list || [];
+  if (list.length === 0) return escapeHtml(song.artists);
+  return list
+    .map((a) => `<span class="artist-link" data-artist="${escapeHtml(a.id)}">${escapeHtml(a.name)}</span>`)
+    .join(", ");
+}
+
 function renderRow({ song, apps, latest }) {
   const extra = apps.length - 1;
   const pill =
@@ -130,7 +151,7 @@ function renderRow({ song, apps, latest }) {
         </div>
         <div class="song-text">
           <div class="title" title="${escapeHtml(song.title)}">${escapeHtml(song.title)}</div>
-          <div class="artist" title="${escapeHtml(song.artists)}">${escapeHtml(song.artists)}</div>
+          <div class="artist" title="${escapeHtml(song.artists)}">${renderArtists(song)}</div>
         </div>
       </div>
       <div class="cell album" title="${escapeHtml(song.album)}">${escapeHtml(song.album)}</div>
@@ -156,7 +177,9 @@ function update() {
   for (const item of list) for (const p of item.apps) playlistsShown.add(p.id);
 
   const chosen = data.playlists.find((p) => p.id === selectedPlaylist);
-  heading.textContent = chosen ? chosen.name : "All Songs";
+  heading.textContent = selectedArtist
+    ? artistNames.get(selectedArtist) || "Artist"
+    : chosen ? chosen.name : "All Songs";
   subtitle.textContent =
     `${list.length.toLocaleString()} ${list.length === 1 ? "song" : "songs"}` +
     ` · ${playlistsShown.size} ${playlistsShown.size === 1 ? "playlist" : "playlists"}` +
@@ -167,6 +190,7 @@ function update() {
     ? list.map(renderRow).join("")
     : showMessage("No songs match these filters.");
   rowsBox.scrollTop = 0;
+  lastRenderAt = performance.now();
 
   // If a song is playing, highlight its row again after the redraw
   if (typeof markPlayingRow === "function") markPlayingRow();
@@ -188,15 +212,84 @@ function renderPlaylistList() {
     .join("");
 }
 
-// Used by the sidebar AND by the popup: jump into one playlist
-function selectPlaylist(id) {
-  selectedPlaylist = id;
-  for (const li of playlistList.children) {
+// ---------- The artists tab ----------
+function renderArtistList() {
+  if (!hasArtists) {
+    artistList.innerHTML = `<li style="white-space: normal;">Run <b>python sync.py</b> once to load your artists.</li>`;
+    return;
+  }
+
+  // Count songs per artist, using only songs that pass the "Added by" filter
+  const mode = addedBySelect.value;
+  const counts = new Map();
+  for (const song of data.songs) {
+    const visible = song.playlists.some(
+      (p) => mode === "all" || (mode === "me" ? p.by_me : !p.by_me)
+    );
+    if (!visible) continue;
+    for (const a of song.artist_list || []) {
+      const entry = counts.get(a.id) || { id: a.id, name: a.name, count: 0 };
+      entry.count += 1;
+      counts.set(a.id, entry);
+    }
+  }
+
+  const query = artistFilter.value.trim().toLowerCase();
+  const items = [...counts.values()]
+    .filter((a) => !query || a.name.toLowerCase().includes(query))
+    .sort((a, b) => b.count - a.count || compareText(a.name, b.name));
+
+  artistList.innerHTML =
+    `<li data-id="">All artists</li>` +
+    items
+      .map(
+        (a) =>
+          `<li data-id="${escapeHtml(a.id)}" title="${escapeHtml(a.name)}">` +
+          `<span class="al-name">${escapeHtml(a.name)}</span>` +
+          `<span class="al-count">${a.count}</span></li>`
+      )
+      .join("");
+  markActive(artistList, selectedArtist);
+}
+
+function showTab(name) {
+  const artists = name === "artists";
+  tabPlaylists.classList.toggle("active", !artists);
+  tabArtists.classList.toggle("active", artists);
+  tabPlaylists.setAttribute("aria-selected", String(!artists));
+  tabArtists.setAttribute("aria-selected", String(artists));
+  playlistList.hidden = artists;
+  artistList.hidden = !artists;
+  artistFilter.hidden = !artists;
+  if (artists) renderArtistList();
+}
+
+// Highlight the chosen entry of a sidebar list
+function markActive(listEl, id) {
+  for (const li of listEl.children) {
+    if (li.dataset.id === undefined) continue;
     const isThis = li.dataset.id === id;
     li.classList.toggle("active", isThis);
-    if (isThis) li.scrollIntoView({ block: "nearest" });
+    if (isThis && !listEl.hidden) li.scrollIntoView({ block: "nearest" });
   }
+}
+
+// You are looking at ONE thing at a time: a playlist, or an artist, or everything.
+function setSelection({ playlist = "", artist = "" }) {
+  selectedPlaylist = playlist;
+  selectedArtist = artist;
+  markActive(playlistList, selectedPlaylist);
+  markActive(artistList, selectedArtist);
   update();
+}
+
+// Used by the sidebar AND by the popup: jump into one playlist
+function selectPlaylist(id) {
+  setSelection({ playlist: id });
+}
+
+function selectArtist(id) {
+  setSelection({ artist: id });
 }
 
 // ---------- The "+N more" popup ----------
@@ -261,7 +354,19 @@ searchBox.addEventListener("input", () => {
   searchTimer = setTimeout(update, 120);
 });
 sortSelect.addEventListener("change", update);
-addedBySelect.addEventListener("change", update);
+addedBySelect.addEventListener("change", () => {
+  update();
+  renderArtistList(); // the counts next to each artist depend on this filter
+});
+
+tabPlaylists.addEventListener("click", () => showTab("playlists"));
+tabArtists.addEventListener("click", () => showTab("artists"));
+artistFilter.addEventListener("input", renderArtistList);
+
+artistList.addEventListener("click", (event) => {
+  const item = event.target.closest("li");
+  if (item && item.dataset.id !== undefined) selectArtist(item.dataset.id);
+});
 
 playlistList.addEventListener("click", (event) => {
   const item = event.target.closest("li");
@@ -270,6 +375,14 @@ playlistList.addEventListener("click", (event) => {
 
 // One click listener for the whole page decides what a click meant
 document.addEventListener("click", (event) => {
+  // Clicking an artist's name under a song: open that artist
+  const artistLink = event.target.closest(".artist-link");
+  if (artistLink) {
+    showTab("artists");
+    selectArtist(artistLink.dataset.artist);
+    return;
+  }
+
   const pill = event.target.closest(".more");
   if (pill) {
     if (pill === activePill) closePopup();
@@ -293,6 +406,14 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closePopup();
 });
 
+// Clicking an artist's name redraws the list instantly. If that click was the
+// first half of a double-click, the second half would land on a brand new row
+// and start playing it. So double-clicks right after a redraw are ignored.
+// (This listener is registered before player.js's, so it gets to stop it.)
+rowsBox.addEventListener("dblclick", (event) => {
+  if (performance.now() - lastRenderAt < 600) event.stopImmediatePropagation();
+});
+
 // A fixed-position popup would drift away from its pill, so close it instead
 rowsBox.addEventListener("scroll", closePopup, { passive: true });
 window.addEventListener("resize", closePopup);
@@ -309,7 +430,13 @@ async function init() {
     rowsBox.innerHTML = showMessage(`Couldn't load your songs: ${error.message}`);
     return;
   }
+  for (const song of data.songs) {
+    for (const a of song.artist_list || []) artistNames.set(a.id, a.name);
+  }
+  hasArtists = artistNames.size > 0;
+
   renderPlaylistList();
+  renderArtistList();
   update();
 }
 

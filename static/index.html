@@ -39,8 +39,13 @@
       </label>
 
       <div class="field">
-        <span>Playlists</span>
+        <div class="tabs" role="tablist">
+          <button class="tab active" id="tab-playlists" role="tab" aria-selected="true">Playlists</button>
+          <button class="tab" id="tab-artists" role="tab" aria-selected="false">Artists</button>
+        </div>
+        <input id="artist-filter" type="text" placeholder="Find an artist" autocomplete="off" hidden>
         <ul class="playlist-list" id="playlist-list"></ul>
+        <ul class="playlist-list artist-list" id="artist-list" hidden></ul>
       </div>
     </aside>
 

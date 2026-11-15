@@ -23,6 +23,27 @@ def get_connection():
     return conn
 
 
+def load_artist_map(conn):
+    """song_id -> [{"id": ..., "name": ...}, ...] in credit order.
+    Returns an empty map if the artist tables don't exist yet (that's the
+    case until you run sync.py once with the new version)."""
+    try:
+        rows = conn.execute(
+            """
+            SELECT sa.song_id, a.artist_id, a.name
+            FROM song_artists sa
+            JOIN artists a ON a.artist_id = sa.artist_id
+            ORDER BY sa.song_id, sa.position
+            """
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    result = {}
+    for r in rows:
+        result.setdefault(r["song_id"], []).append({"id": r["artist_id"], "name": r["name"]})
+    return result
+
+
 @app.route("/")
 def home():
     return app.send_static_file("index.html")
@@ -62,6 +83,7 @@ def api_songs():
     playlist_rows = conn.execute(
         "SELECT playlist_id, name FROM playlists ORDER BY name COLLATE NOCASE"
     ).fetchall()
+    artist_map = load_artist_map(conn)
     conn.close()
 
     # Collapse the rows into one entry per song. Because the query is sorted
@@ -74,6 +96,7 @@ def api_songs():
                 "id": r["song_id"],
                 "title": r["title"],
                 "artists": r["artists"],
+                "artist_list": artist_map.get(r["song_id"], []),
                 "album": r["album"],
                 "image": r["image_url"],
                 "playlists": [],

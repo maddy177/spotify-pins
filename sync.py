@@ -1,23 +1,13 @@
 import sys
 import sqlite3
 
-from dotenv import load_dotenv
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
+
+from spotify_auth import make_auth
 
 sys.stdout.reconfigure(encoding="utf-8")
-load_dotenv()
 
 DB_FILE = "spotify_pins.db"
-
-SCOPES = (
-    "user-library-read "
-    "playlist-read-private "
-    "playlist-read-collaborative "
-    "user-read-recently-played "
-    "user-read-playback-state "
-    "user-modify-playback-state"
-)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS playlists (
@@ -42,9 +32,21 @@ CREATE TABLE IF NOT EXISTS appearances (
     added_by    TEXT,
     PRIMARY KEY (song_id, playlist_id)
 );
+
+CREATE TABLE IF NOT EXISTS artists (
+    artist_id TEXT PRIMARY KEY,
+    name      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS song_artists (
+    song_id   TEXT NOT NULL REFERENCES songs(song_id),
+    artist_id TEXT NOT NULL REFERENCES artists(artist_id),
+    position  INTEGER NOT NULL,
+    PRIMARY KEY (song_id, artist_id)
+);
 """
 
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=SCOPES))
+sp = spotipy.Spotify(auth_manager=make_auth())
 my_id = sp.current_user()["id"]
 
 # ---------- 1. Fetch everything from Spotify (nothing saved yet) ----------
@@ -60,9 +62,12 @@ playlists = [p for p in all_playlists if p["owner"]["id"] == my_id]
 print(f"{len(playlists)} owned playlists. Fetching songs, this takes a bit...")
 
 songs = {}          # song_id -> song details (one entry per song)
+artists = {}        # artist_id -> artist name (one entry per artist)
+song_artists = {}   # (song_id, artist_id) -> position in the credits
 appearances = {}    # (song_id, playlist_id) -> latest add info
 skipped_local = 0
 merged_dupes = 0
+artists_without_id = 0
 
 for i, pl in enumerate(playlists, start=1):
     data = sp._get(f"playlists/{pl['id']}/items", limit=50, offset=0)
@@ -95,6 +100,18 @@ for i, pl in enumerate(playlists, start=1):
                 song.get("duration_ms"),
             )
 
+            # Each credited artist, kept by Spotify's artist ID so that
+            # "Drake" can never be confused with "Drake Bell"
+            for position, artist in enumerate(song.get("artists", [])):
+                name = artist.get("name") or "Unknown artist"
+                artist_id = artist.get("id")
+                if not artist_id:
+                    # Safety net in case Spotify ever stops sending IDs
+                    artists_without_id += 1
+                    artist_id = "name:" + name.lower()
+                artists[artist_id] = name
+                song_artists.setdefault((song["id"], artist_id), position)
+
             # Same song twice in the same playlist -> keep only the latest date
             key = (song["id"], pl["id"])
             added_at = entry.get("added_at") or ""
@@ -116,7 +133,10 @@ conn.execute("PRAGMA foreign_keys = ON")
 conn.executescript(SCHEMA)
 
 with conn:  # the "with" makes this one transaction
+    # Clear in this order: tables that point at others go first
+    conn.execute("DELETE FROM song_artists")
     conn.execute("DELETE FROM appearances")
+    conn.execute("DELETE FROM artists")
     conn.execute("DELETE FROM playlists")
     conn.execute("DELETE FROM songs")
 
@@ -125,7 +145,12 @@ with conn:  # the "with" makes this one transaction
         [(p["id"], p["name"], p["owner"]["id"]) for p in playlists],
     )
     conn.executemany("INSERT INTO songs VALUES (?, ?, ?, ?, ?, ?)", songs.values())
+    conn.executemany("INSERT INTO artists VALUES (?, ?)", artists.items())
     conn.executemany("INSERT INTO appearances VALUES (?, ?, ?, ?)", appearances.values())
+    conn.executemany(
+        "INSERT INTO song_artists VALUES (?, ?, ?)",
+        [(song_id, artist_id, pos) for (song_id, artist_id), pos in song_artists.items()],
+    )
 
 # ---------- 3. Summary ----------
 def count(table):
@@ -135,6 +160,9 @@ print("\n=== SAVED TO", DB_FILE, "===")
 print(f"Playlists:                          {count('playlists')}")
 print(f"Unique songs:                       {count('songs')}")
 print(f"Song-in-playlist entries:           {count('appearances')}")
+print(f"Unique artists:                     {count('artists')}")
+print(f"Song-artist links:                  {count('song_artists')}")
 print(f"Local files skipped:                {skipped_local}")
 print(f"Same-playlist duplicates merged:    {merged_dupes}")
+print(f"Artists that came without an ID:    {artists_without_id}")
 conn.close()
