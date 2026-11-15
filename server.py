@@ -4,11 +4,17 @@ from datetime import datetime, timezone
 
 from flask import Flask, jsonify
 
+from spotify_auth import make_auth
+
 DB_FILE = "spotify_pins.db"
 
 app = Flask(__name__)
 app.json.ensure_ascii = False   # show emoji/accents as real characters, not \u codes
 app.json.sort_keys = False      # keep the field order we write below
+
+# Used only to hand the saved login token to the browser's player.
+# open_browser=False: the server must never pop up a login window by itself.
+auth = make_auth(open_browser=False)
 
 
 def get_connection():
@@ -20,6 +26,20 @@ def get_connection():
 @app.route("/")
 def home():
     return app.send_static_file("index.html")
+
+
+@app.route("/api/token")
+def api_token():
+    # Reads the saved token. If it has expired, spotipy refreshes it for us.
+    # If there is no token, or it lacks the playback permissions, we get None.
+    token_info = auth.validate_token(auth.cache_handler.get_cached_token())
+    if not token_info:
+        response = jsonify(error="Not logged in with playback permission. Run: python login.py")
+        response.status_code = 401
+    else:
+        response = jsonify(token=token_info["access_token"], expires_at=token_info["expires_at"])
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/api/songs")

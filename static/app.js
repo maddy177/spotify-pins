@@ -17,6 +17,7 @@ const subtitle = document.getElementById("subtitle");
 let data = null;            // everything the server sent us
 let selectedPlaylist = "";  // "" means "all playlists"
 let itemsById = new Map();  // song id -> what's currently shown for that song
+let currentList = [];       // the songs on screen, in the order shown (the player uses this)
 let activePill = null;      // the "+N more" button whose popup is open
 
 // The popup is created once and reused. It lives outside the list so that
@@ -25,6 +26,14 @@ const popup = document.createElement("div");
 popup.className = "popup";
 popup.hidden = true;
 document.body.appendChild(popup);
+
+// ---------- Icons (small drawings, shared with player.js) ----------
+const ICONS = {
+  play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
+  prev: '<svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM20 6v12L9.5 12z"/></svg>',
+  next: '<svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM4 6v12l10.5-6z"/></svg>',
+};
 
 // ---------- Small helper functions ----------
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -113,9 +122,12 @@ function renderRow({ song, apps, latest }) {
     : `<div class="cover" style="background:#2a2a2a"></div>`;
 
   return `
-    <div class="row">
+    <div class="row" data-song="${escapeHtml(song.id)}">
       <div class="cell song">
-        ${cover}
+        <div class="cover-wrap">
+          ${cover}
+          <button class="play-btn" data-song="${escapeHtml(song.id)}" aria-label="Play">${ICONS.play}</button>
+        </div>
         <div class="song-text">
           <div class="title" title="${escapeHtml(song.title)}">${escapeHtml(song.title)}</div>
           <div class="artist" title="${escapeHtml(song.artists)}">${escapeHtml(song.artists)}</div>
@@ -136,6 +148,7 @@ function update() {
 
   const list = buildSongList();
   list.sort(SORTERS[sortSelect.value]);
+  currentList = list;
   itemsById = new Map(list.map((item) => [item.song.id, item]));
 
   // Heading + the small line under it
@@ -154,6 +167,9 @@ function update() {
     ? list.map(renderRow).join("")
     : showMessage("No songs match these filters.");
   rowsBox.scrollTop = 0;
+
+  // If a song is playing, highlight its row again after the redraw
+  if (typeof markPlayingRow === "function") markPlayingRow();
 }
 
 function showMessage(text) {

@@ -49,6 +49,10 @@
       <header class="main-header">
         <h2 id="heading">All Songs</h2>
         <p class="subtitle" id="subtitle">Loading…</p>
+        <button class="play-all" id="play-all" title="Plays up to 100 songs from the top of this list">
+          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          Play
+        </button>
       </header>
 
       <div class="table">
@@ -63,8 +67,30 @@
       </div>
     </main>
 
+    <!-- BOTTOM BAR: the player -->
+    <footer class="player">
+      <div class="np">
+        <img class="np-cover" id="np-cover" alt="" hidden>
+        <div class="np-text">
+          <div class="np-title" id="np-title">Nothing playing</div>
+          <div class="np-artist" id="np-artist"></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="ctrl" id="btn-prev" aria-label="Previous song"></button>
+        <button class="ctrl main" id="btn-play" aria-label="Play or pause"></button>
+        <button class="ctrl" id="btn-next" aria-label="Next song"></button>
+      </div>
+
+      <div class="player-status" id="player-status">Connecting player…</div>
+    </footer>
+
   </div>
 
+  <!-- Order matters: app.js first, then player.js, then Spotify's own player code -->
   <script src="/static/app.js"></script>
+  <script src="/static/player.js"></script>
+  <script src="https://sdk.scdn.co/spotify-player.js"></script>
 </body>
 </html>
