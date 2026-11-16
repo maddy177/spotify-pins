@@ -1,10 +1,13 @@
 import os
 import sqlite3
+import threading
 from datetime import datetime, timezone
 
-from flask import Flask, jsonify
+import spotipy
+from flask import Flask, jsonify, request
 
 from spotify_auth import make_auth
+from sync import run_sync
 
 DB_FILE = "spotify_pins.db"
 
@@ -17,8 +20,26 @@ app.json.sort_keys = False      # keep the field order we write below
 auth = make_auth(open_browser=False)
 
 
+# What the Sync button is doing right now. The sync runs in a background
+# thread; the page asks /api/sync/status every moment to show progress.
+sync_lock = threading.Lock()
+sync_state = {
+    "running": False,
+    "done": 0,
+    "total": 0,
+    "error": None,
+    "summary": None,
+}
+
+
+def get_valid_token():
+    """The saved login token (refreshed if it expired), or None if there isn't a
+    usable one. Never opens a browser or waits for anyone to type."""
+    return auth.validate_token(auth.cache_handler.get_cached_token())
+
+
 def get_connection():
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_FILE, timeout=30)
     conn.row_factory = sqlite3.Row   # lets us read columns by name: row["title"]
     return conn
 
@@ -53,12 +74,57 @@ def home():
 def api_token():
     # Reads the saved token. If it has expired, spotipy refreshes it for us.
     # If there is no token, or it lacks the playback permissions, we get None.
-    token_info = auth.validate_token(auth.cache_handler.get_cached_token())
+    token_info = get_valid_token()
     if not token_info:
         response = jsonify(error="Not logged in with playback permission. Run: python login.py")
         response.status_code = 401
     else:
         response = jsonify(token=token_info["access_token"], expires_at=token_info["expires_at"])
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def sync_worker(access_token):
+    """Runs in its own thread so the page doesn't freeze while we sync."""
+    def progress(done, total):
+        with sync_lock:
+            sync_state.update(done=done, total=total)
+
+    try:
+        sp = spotipy.Spotify(auth=access_token)
+        summary = run_sync(sp, progress)
+        with sync_lock:
+            sync_state.update(running=False, error=None, summary=summary)
+    except Exception as error:  # show any failure in the page instead of dying silently
+        with sync_lock:
+            sync_state.update(running=False, error=str(error), summary=None)
+
+
+@app.route("/api/sync", methods=["POST"])
+def api_sync_start():
+    # Browsers attach this header only to requests made by our own page.
+    # Other websites can't add it without our permission, so they can't
+    # trigger a sync behind your back.
+    if request.headers.get("X-Requested-With") != "spotify-pins":
+        return jsonify(error="Forbidden"), 403
+
+    token_info = get_valid_token()
+    if not token_info:
+        return jsonify(error="Not logged in. Run: python login.py"), 401
+
+    with sync_lock:
+        if sync_state["running"]:
+            return jsonify(error="A sync is already running."), 409
+        sync_state.update(running=True, done=0, total=0, error=None, summary=None)
+
+    threading.Thread(target=sync_worker, args=(token_info["access_token"],), daemon=True).start()
+    return jsonify(started=True), 202
+
+
+@app.route("/api/sync/status")
+def api_sync_status():
+    with sync_lock:
+        response = jsonify(dict(sync_state))
     response.headers["Cache-Control"] = "no-store"
     return response
 

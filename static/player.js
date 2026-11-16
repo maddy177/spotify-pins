@@ -5,27 +5,92 @@
 //  Needs app.js loaded first (it uses currentList, rowsBox and ICONS).
 // ======================================================================
 
+// ---------- Settings you can tweak ----------
+const BATCH_SIZE = 100;          // Spotify accepts at most 100 songs per play request
+const HANDOFF_EARLY_MS = 1500;   // start the next batch this long before the last song ends
+const VOLUME_KEY = "spotify-pins-volume";
+
+const VOLUME_ICONS = {
+  on:
+    '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/>' +
+    '<path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  off:
+    '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/>' +
+    '<path d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+};
+
+// ---------- The page elements ----------
 const npCover = document.getElementById("np-cover");
 const npTitle = document.getElementById("np-title");
 const npArtist = document.getElementById("np-artist");
 const btnPrev = document.getElementById("btn-prev");
 const btnPlay = document.getElementById("btn-play");
 const btnNext = document.getElementById("btn-next");
+const btnMute = document.getElementById("btn-mute");
+const seekSlider = document.getElementById("seek");
+const volumeSlider = document.getElementById("volume");
+const timeNow = document.getElementById("time-now");
+const timeTotal = document.getElementById("time-total");
 const statusLine = document.getElementById("player-status");
 const playAllButton = document.getElementById("play-all");
+const shuffleButton = document.getElementById("shuffle-all");
 
+// ---------- State ----------
 let sdkPlayer = null;      // Spotify's player object
 let deviceId = null;       // this tab's "device id" once Spotify says it's ready
 let currentTrackId = null; // the song playing right now (to highlight its row)
 
-btnPrev.innerHTML = ICONS.prev;
-btnPlay.innerHTML = ICONS.play;
-btnNext.innerHTML = ICONS.next;
+// The playing position. Spotify only tells us when something CHANGES (a new
+// song, pause, seek), so between those moments we calculate the position
+// ourselves from the last report plus the time that has passed.
+let hasTrack = false;
+let paused = true;
+let duration = 0;
+let positionAtReport = 0;
+let reportedAt = 0;
+let seeking = false; // true while you are dragging the seek bar
+
+// A "session" = everything you asked to play with one click. Spotify takes at
+// most 100 songs at a time, so a long session is sent in batches.
+let playQueue = [];        // every song (as a Spotify URI) of this session, in order
+let queueIndex = new Map();// song id -> its place in playQueue
+let batchStart = 0;        // playQueue[batchStart .. batchEnd) is what Spotify holds right now
+let batchEnd = 0;
+let handoffTimer = null;
+let handoffBusy = false;
+
+// ---------- Small helpers ----------
+const idOfUri = (uri) => uri.split(":")[2];
+
+function formatTime(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = String(totalSeconds % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
+function setFill(slider, percent) {
+  slider.style.setProperty("--fill", `${percent}%`);
+}
 
 function setStatus(text, kind = "") {
   statusLine.textContent = text;
   statusLine.className = "player-status " + kind; // kind is "ok", "error" or ""
 }
+
+function shuffled(list) {
+  const copy = list.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+btnPrev.innerHTML = ICONS.prev;
+btnPlay.innerHTML = ICONS.play;
+btnNext.innerHTML = ICONS.next;
 
 // Ask our own server for the saved login token
 async function getToken() {
@@ -37,10 +102,45 @@ async function getToken() {
   return body.token;
 }
 
+// ---------- Volume ----------
+let volume = 70;       // 0 to 100
+let volumeBeforeMute = 70;
+
+try {
+  const saved = Number(localStorage.getItem(VOLUME_KEY));
+  if (localStorage.getItem(VOLUME_KEY) !== null && Number.isFinite(saved)) {
+    volume = Math.min(100, Math.max(0, saved));
+  }
+} catch (error) {
+  // storage can be unavailable (private windows); we just use the default
+}
+if (volume > 0) volumeBeforeMute = volume;
+
+function applyVolume(value) {
+  volume = Math.min(100, Math.max(0, Number(value)));
+  if (volume > 0) volumeBeforeMute = volume;
+  volumeSlider.value = volume;
+  setFill(volumeSlider, volume);
+  btnMute.innerHTML = volume === 0 ? VOLUME_ICONS.off : VOLUME_ICONS.on;
+  btnMute.setAttribute("aria-label", volume === 0 ? "Unmute" : "Mute");
+  if (sdkPlayer) sdkPlayer.setVolume(volume / 100);
+  try {
+    localStorage.setItem(VOLUME_KEY, String(volume));
+  } catch (error) {
+    // not saving is fine
+  }
+}
+
+volumeSlider.addEventListener("input", () => applyVolume(volumeSlider.value));
+btnMute.addEventListener("click", () => applyVolume(volume === 0 ? volumeBeforeMute : 0));
+applyVolume(volume);
+
 // ---------- Show what's playing ----------
 function renderState(state) {
   if (!state || !state.track_window || !state.track_window.current_track) {
+    hasTrack = false;
     currentTrackId = null;
+    seekSlider.disabled = true;
     markPlayingRow();
     return;
   }
@@ -56,10 +156,29 @@ function renderState(state) {
 
   btnPlay.innerHTML = state.paused ? ICONS.play : ICONS.pause;
 
+  // Remember this report so we can work out the position between reports
+  hasTrack = true;
+  paused = state.paused;
+  duration = state.duration || 0;
+  positionAtReport = state.position || 0;
+  reportedAt = performance.now();
+  seekSlider.disabled = false;
+  seekSlider.max = duration;
+  timeTotal.textContent = formatTime(duration);
+  updatePositionDisplay();
+
   // Spotify sometimes swaps a song for an equivalent version; "linked_from"
   // holds the id of the one we originally asked for.
   currentTrackId = (track.linked_from && track.linked_from.id) || track.id;
   markPlayingRow();
+
+  // "Playing · 12 of 214"
+  const place = queueIndex.get(currentTrackId);
+  if (place !== undefined) {
+    setStatus(`${state.paused ? "Paused" : "Playing"} · ${place + 1} of ${playQueue.length}`, "ok");
+  }
+
+  scheduleHandoff(state);
 }
 
 // Called here and from app.js after every redraw of the list
@@ -72,11 +191,45 @@ function markPlayingRow() {
   if (row) row.classList.add("playing");
 }
 
-// ---------- Start playing ----------
+// ---------- The seek bar ----------
+function currentPosition() {
+  if (!hasTrack) return 0;
+  if (paused) return positionAtReport;
+  return Math.min(duration, positionAtReport + (performance.now() - reportedAt));
+}
+
+function updatePositionDisplay() {
+  const position = currentPosition();
+  seekSlider.value = position;
+  timeNow.textContent = formatTime(position);
+  setFill(seekSlider, duration ? (position / duration) * 100 : 0);
+}
+
+setInterval(() => {
+  if (hasTrack && !seeking) updatePositionDisplay();
+}, 250);
+
+// While you drag: only update the numbers. When you let go: really jump there.
+seekSlider.addEventListener("input", () => {
+  seeking = true;
+  const wanted = Number(seekSlider.value);
+  timeNow.textContent = formatTime(wanted);
+  setFill(seekSlider, duration ? (wanted / duration) * 100 : 0);
+});
+seekSlider.addEventListener("change", () => {
+  const wanted = Number(seekSlider.value);
+  positionAtReport = wanted;
+  reportedAt = performance.now();
+  seeking = false;
+  if (sdkPlayer) sdkPlayer.seek(wanted);
+});
+
+// ---------- Starting playback ----------
+// Sends one batch of songs to Spotify. Returns true if Spotify accepted it.
 async function playUris(uris) {
   if (!sdkPlayer || !deviceId) {
     setStatus("The player isn’t ready yet. Give it a moment.", "error");
-    return;
+    return false;
   }
 
   // Browsers only allow sound after a click. This must run right inside the
@@ -100,24 +253,83 @@ async function playUris(uris) {
       const detail = await response.text();
       console.error("Play request failed:", response.status, detail);
       setStatus(`Spotify refused to start playback (error ${response.status}). Details are in the Console.`, "error");
-      return;
+      return false;
     }
-    setStatus("Playing in this tab", "ok");
+    return true;
   } catch (error) {
     setStatus(error.message, "error");
+    return false;
   }
 }
 
-// Play the song with this id, followed by the songs after it in the current list.
-// With no id, start from the top. Spotify accepts at most 100 songs at once.
-function playFrom(songId) {
+// Sends playQueue[from ... from + BATCH_SIZE] to Spotify
+async function sendBatch(from) {
+  const to = Math.min(from + Math.max(2, BATCH_SIZE), playQueue.length);
+  const accepted = await playUris(playQueue.slice(from, to));
+  if (accepted) {
+    batchStart = from;
+    batchEnd = to;
+    if (!hasTrack) setStatus("Starting…", "ok");
+  }
+  return accepted;
+}
+
+// Start a new session from the songs currently on screen
+function playFrom(songId, { shuffle = false } = {}) {
   if (currentList.length === 0) return;
-  let start = songId ? currentList.findIndex((item) => item.song.id === songId) : 0;
-  if (start < 0) start = 0;
-  const uris = currentList
-    .slice(start, start + 100)
-    .map((item) => `spotify:track:${item.song.id}`);
-  playUris(uris);
+
+  let order = currentList;
+  let start = 0;
+  if (shuffle) {
+    order = shuffled(currentList);
+  } else if (songId) {
+    start = Math.max(0, order.findIndex((item) => item.song.id === songId));
+  }
+
+  clearTimeout(handoffTimer);
+  playQueue = order.slice(start).map((item) => `spotify:track:${item.song.id}`);
+  queueIndex = new Map(playQueue.map((uri, i) => [idOfUri(uri), i]));
+  batchStart = 0;
+  batchEnd = 0;
+  sendBatch(0);
+}
+
+// ---------- Continuing past the first batch ----------
+// Spotify plays a batch and then stops. Shortly before the LAST song of a
+// batch ends, we send the next batch so the music carries on.
+function onLastSongOfBatch(state) {
+  if (batchEnd <= batchStart) return false;
+  const track = state.track_window.current_track;
+  const lastId = idOfUri(playQueue[batchEnd - 1]);
+  return track.id === lastId || (track.linked_from && track.linked_from.id === lastId);
+}
+
+async function handoff() {
+  clearTimeout(handoffTimer);
+  if (handoffBusy || batchEnd >= playQueue.length) return;
+  handoffBusy = true;
+  try {
+    await sendBatch(batchEnd);
+  } finally {
+    handoffBusy = false;
+  }
+}
+
+function scheduleHandoff(state) {
+  clearTimeout(handoffTimer);
+  if (batchEnd >= playQueue.length || !onLastSongOfBatch(state)) return;
+
+  // Spotify already stopped at the end of the batch: carry on right away
+  const stoppedAtEnd =
+    state.paused && state.position === 0 && state.track_window.next_tracks.length === 0;
+  if (stoppedAtEnd) {
+    handoff();
+    return;
+  }
+  if (state.paused) return; // you paused it yourself: wait
+
+  const remaining = (state.duration || 0) - (state.position || 0);
+  handoffTimer = setTimeout(handoff, Math.max(0, remaining - HANDOFF_EARLY_MS));
 }
 
 // ---------- Buttons ----------
@@ -133,21 +345,32 @@ rowsBox.addEventListener("dblclick", (event) => {
 });
 
 playAllButton.addEventListener("click", () => playFrom(null));
+shuffleButton.addEventListener("click", () => playFrom(null, { shuffle: true }));
 
-btnPlay.addEventListener("click", () => {
+function togglePlayback() {
   if (!sdkPlayer) return;
   if (sdkPlayer.activateElement) sdkPlayer.activateElement();
   sdkPlayer.togglePlay();
-});
+}
+
+btnPlay.addEventListener("click", togglePlayback);
 btnPrev.addEventListener("click", () => sdkPlayer && sdkPlayer.previousTrack());
 btnNext.addEventListener("click", () => sdkPlayer && sdkPlayer.nextTrack());
+
+// Spacebar = play/pause (unless you're typing, or a button has focus)
+document.addEventListener("keydown", (event) => {
+  if (event.code !== "Space") return;
+  if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(event.target.tagName)) return;
+  event.preventDefault();
+  togglePlayback();
+});
 
 // ---------- Connect to Spotify ----------
 // Spotify's script (loaded at the bottom of index.html) calls this when it is ready.
 window.onSpotifyWebPlaybackSDKReady = () => {
   sdkPlayer = new Spotify.Player({
     name: "Spotify Pins",
-    volume: 0.7,
+    volume: volume / 100,
     getOAuthToken: async (giveToken) => {
       try {
         giveToken(await getToken());

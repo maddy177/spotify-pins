@@ -418,23 +418,44 @@ rowsBox.addEventListener("dblclick", (event) => {
 rowsBox.addEventListener("scroll", closePopup, { passive: true });
 window.addEventListener("resize", closePopup);
 
-// ---------- Start: fetch the songs from our server ----------
-async function init() {
-  rowsBox.innerHTML = showMessage("Loading your library…");
-  try {
-    const response = await fetch("/api/songs");
-    if (!response.ok) throw new Error(`the server answered ${response.status}`);
-    data = await response.json();
-  } catch (error) {
-    subtitle.textContent = "Something went wrong";
-    rowsBox.innerHTML = showMessage(`Couldn't load your songs: ${error.message}`);
-    return;
-  }
+// ---------- Loading the data ----------
+// Fetches everything from our server and keeps it in `data`.
+// (Separate from drawing, so a sync can refresh the data without a page reload.
+// A reload would kill the music, because the player lives in this page.)
+async function loadData() {
+  const response = await fetch("/api/songs", { cache: "no-store" });
+  if (!response.ok) throw new Error(`the server answered ${response.status}`);
+  data = await response.json();
+
+  artistNames = new Map();
   for (const song of data.songs) {
     for (const a of song.artist_list || []) artistNames.set(a.id, a.name);
   }
   hasArtists = artistNames.size > 0;
 
+  // If what you had selected no longer exists (e.g. you deleted that playlist), reset it
+  if (selectedPlaylist && !data.playlists.some((p) => p.id === selectedPlaylist)) selectedPlaylist = "";
+  if (selectedArtist && !artistNames.has(selectedArtist)) selectedArtist = "";
+}
+
+// Called by sync.js when a sync has finished
+async function refreshAfterSync() {
+  await loadData();
+  renderPlaylistList();
+  renderArtistList();
+  update();
+}
+
+// ---------- Start ----------
+async function init() {
+  rowsBox.innerHTML = showMessage("Loading your library…");
+  try {
+    await loadData();
+  } catch (error) {
+    subtitle.textContent = "Something went wrong";
+    rowsBox.innerHTML = showMessage(`Couldn't load your songs: ${error.message}`);
+    return;
+  }
   renderPlaylistList();
   renderArtistList();
   update();
