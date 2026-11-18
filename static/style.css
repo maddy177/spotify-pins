@@ -828,3 +828,206 @@ select:focus {
   color: var(--text);
   text-decoration: underline;
 }
+
+
+/* ---------- The queue ---------- */
+
+/* The + button at the right end of a song's title cell */
+.queue-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.queue-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.rows .row:hover .queue-btn,
+.queue-btn:focus-visible {
+  opacity: 1;
+}
+
+.queue-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--green);
+}
+
+.ctrl.active {
+  color: var(--green);
+}
+
+/* The panel that slides over the right side of the page */
+.queue-drawer {
+  position: fixed;
+  z-index: 90;
+  top: 8px;
+  right: 8px;
+  bottom: 100px; /* leaves room for the player bar */
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  display: flex;
+  flex-direction: column;
+  background: #181818;
+  border-radius: var(--radius);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.6);
+}
+
+.queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 8px;
+}
+
+.queue-head h3 {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.queue-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.queue-close:hover {
+  color: var(--text);
+}
+
+.queue-close svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.queue-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+
+.queue-title {
+  padding: 12px 8px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.queue-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.queue-item img,
+.qi-cover {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: #2a2a2a;
+}
+
+.qi-text {
+  min-width: 0;
+}
+
+.qi-title,
+.qi-artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qi-title {
+  font-size: 14px;
+}
+
+.qi-artist {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.queue-empty,
+.queue-note {
+  padding: 12px 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.queue-empty.error {
+  color: #ff6b6b;
+}
+
+/* The small message that appears at the bottom, e.g. "Added to your queue" */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 108px;
+  z-index: 120;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  background: var(--text);
+  color: #000;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  transform: translateX(-50%);
+  animation: toast-in 0.15s ease-out;
+}
+
+.toast.error {
+  background: #ff6b6b;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (max-width: 800px) {
+  .queue-drawer {
+    bottom: 180px; /* the player bar is taller on a phone */
+  }
+  .toast {
+    bottom: 188px;
+  }
+}

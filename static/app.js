@@ -35,12 +35,14 @@ popup.className = "popup";
 popup.hidden = true;
 document.body.appendChild(popup);
 
-// ---------- Icons (small drawings, shared with player.js) ----------
+// ---------- Icons (small drawings, shared with player.js and queue.js) ----------
 const ICONS = {
   play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
   pause: '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
   prev: '<svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM20 6v12L9.5 12z"/></svg>',
   next: '<svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM4 6v12l10.5-6z"/></svg>',
+  queue: '<svg viewBox="0 0 24 24"><path d="M3 6h12v2H3zM3 11h12v2H3zM3 16h8v2H3zM17 13h2v3h3v2h-3v3h-2v-3h-3v-2h3z"/></svg>',
+  close: '<svg viewBox="0 0 24 24"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z"/></svg>',
 };
 
 // ---------- Small helper functions ----------
@@ -153,6 +155,7 @@ function renderRow({ song, apps, latest }) {
           <div class="title" title="${escapeHtml(song.title)}">${escapeHtml(song.title)}</div>
           <div class="artist" title="${escapeHtml(song.artists)}">${renderArtists(song)}</div>
         </div>
+        <button class="queue-btn" data-song="${escapeHtml(song.id)}" title="Add to queue" aria-label="Add to queue">${ICONS.queue}</button>
       </div>
       <div class="cell album" title="${escapeHtml(song.album)}">${escapeHtml(song.album)}</div>
       <div class="cell playlists">

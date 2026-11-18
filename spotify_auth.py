@@ -10,6 +10,7 @@ SCOPES = (
     "playlist-read-private "
     "playlist-read-collaborative "
     "user-read-recently-played "
+    "user-read-currently-playing "
     "user-read-playback-state "
     "user-modify-playback-state "
     "streaming "
