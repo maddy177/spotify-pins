@@ -357,12 +357,43 @@ btnPlay.addEventListener("click", togglePlayback);
 btnPrev.addEventListener("click", () => sdkPlayer && sdkPlayer.previousTrack());
 btnNext.addEventListener("click", () => sdkPlayer && sdkPlayer.nextTrack());
 
-// Spacebar = play/pause (unless you're typing, or a button has focus)
+// Spacebar = play/pause, like in Spotify. It works wherever the keyboard focus is
+// (even on a button you just clicked), except while you are typing in a text box.
+function isTypingTarget(element) {
+  if (element.isContentEditable) return true;
+  const tag = element.tagName;
+  if (tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (tag === "INPUT") {
+    // sliders and buttons don't use the space bar, so they don't count as typing
+    return !["range", "button", "submit", "reset"].includes(element.type);
+  }
+  return false;
+}
+
+let spaceHandled = false; // true between pressing and releasing a space we used
+
 document.addEventListener("keydown", (event) => {
   if (event.code !== "Space") return;
-  if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(event.target.tagName)) return;
-  event.preventDefault();
-  togglePlayback();
+  if (event.ctrlKey || event.altKey || event.metaKey) return;
+  if (isTypingTarget(event.target)) return;
+
+  event.preventDefault(); // stops a focused button from being "pressed" by the space bar
+  spaceHandled = true;
+  if (!event.repeat) togglePlayback(); // holding the key down shouldn't flicker pause/play
+});
+
+// Some browsers press a focused button when the space bar is RELEASED, so cancel that too
+document.addEventListener("keyup", (event) => {
+  if (event.code === "Space" && spaceHandled) {
+    event.preventDefault();
+    spaceHandled = false;
+  }
+});
+
+// After you choose something in a dropdown it keeps keyboard focus, and the space
+// bar would then re-open it instead of pausing. Let go of it once you've chosen.
+document.addEventListener("change", (event) => {
+  if (event.target.tagName === "SELECT") event.target.blur();
 });
 
 // ---------- Connect to Spotify ----------
