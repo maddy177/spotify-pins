@@ -287,11 +287,13 @@ function playFrom(songId, { shuffle = false } = {}) {
   }
 
   clearTimeout(handoffTimer);
-  playQueue = order.slice(start).map((item) => `spotify:track:${item.song.id}`);
+  // Keep the WHOLE list (not just the part after the clicked song), so that
+  // Previous can still walk back above the song you started from.
+  playQueue = order.map((item) => `spotify:track:${item.song.id}`);
   queueIndex = new Map(playQueue.map((uri, i) => [idOfUri(uri), i]));
-  batchStart = 0;
-  batchEnd = 0;
-  sendBatch(0);
+  batchStart = start;
+  batchEnd = start;
+  sendBatch(start);
 }
 
 // ---------- Continuing past the first batch ----------
@@ -354,7 +356,51 @@ function togglePlayback() {
 }
 
 btnPlay.addEventListener("click", togglePlayback);
-btnPrev.addEventListener("click", () => sdkPlayer && sdkPlayer.previousTrack());
+// ---------- The Previous button, the way Spotify does it ----------
+const RESTART_AFTER_MS = 3000; // played longer than this: Previous restarts the song
+
+function restartSong() {
+  positionAtReport = 0; // update our own clock right away, don't wait for Spotify
+  reportedAt = performance.now();
+  updatePositionDisplay();
+  sdkPlayer.seek(0);
+}
+
+function goToPrevious() {
+  if (!sdkPlayer || !hasTrack) return;
+
+  // 1) You've been listening for a while: just start this song again
+  if (currentPosition() > RESTART_AFTER_MS) {
+    restartSong();
+    return;
+  }
+
+  const place = queueIndex.get(currentTrackId);
+
+  // 2) A song we didn't start (for example from your phone): let Spotify decide
+  if (place === undefined) {
+    sdkPlayer.previousTrack();
+    return;
+  }
+
+  // 3) The very first song of the list: there is nothing before it
+  if (place === 0) {
+    restartSong();
+    return;
+  }
+
+  // 4) The song before it is still inside the batch Spotify holds: step back normally
+  if (place - 1 >= batchStart) {
+    sdkPlayer.previousTrack();
+    return;
+  }
+
+  // 5) The song before it is in an earlier batch (or above the song you clicked
+  //    to start): Spotify can't see it, so send it again, starting one song earlier
+  sendBatch(place - 1);
+}
+
+btnPrev.addEventListener("click", goToPrevious);
 btnNext.addEventListener("click", () => sdkPlayer && sdkPlayer.nextTrack());
 
 // Spacebar = play/pause, like in Spotify. It works wherever the keyboard focus is
