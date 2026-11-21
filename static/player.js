@@ -19,6 +19,14 @@ const VOLUME_ICONS = {
     '<path d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
 };
 
+const REPEAT_ICONS = {
+  all:
+    '<svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>',
+  one:
+    '<svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>' +
+    '<path d="M13 15V9h-1l-2 1v1h1.5v4H13z"/></svg>',
+};
+
 // ---------- The page elements ----------
 const npCover = document.getElementById("np-cover");
 const npTitle = document.getElementById("np-title");
@@ -34,11 +42,16 @@ const timeTotal = document.getElementById("time-total");
 const statusLine = document.getElementById("player-status");
 const playAllButton = document.getElementById("play-all");
 const shuffleButton = document.getElementById("shuffle-all");
+const btnRepeat = document.getElementById("btn-repeat");
 
 // ---------- State ----------
 let sdkPlayer = null;      // Spotify's player object
 let deviceId = null;       // this tab's "device id" once Spotify says it's ready
 let currentTrackId = null; // the song playing right now (to highlight its row)
+let lastState = null;      // the most recent report from Spotify
+let repeatMode = "off";    // "off", "all" (repeat the whole list) or "one" (repeat this song)
+let repeatChangedAt = 0;   // when WE last changed repeat (see syncRepeatFromState)
+let repeatBusy = false;
 
 // The playing position. Spotify only tells us when something CHANGES (a new
 // song, pause, seek), so between those moments we calculate the position
@@ -178,6 +191,8 @@ function renderState(state) {
     setStatus(`${state.paused ? "Paused" : "Playing"} · ${place + 1} of ${playQueue.length}`, "ok");
   }
 
+  lastState = state;
+  syncRepeatFromState(state);
   scheduleHandoff(state);
 }
 
@@ -306,12 +321,20 @@ function onLastSongOfBatch(state) {
   return track.id === lastId || (track.linked_from && track.linked_from.id === lastId);
 }
 
+// True when the batch Spotify holds reaches the very end of the whole list
+function atEndOfList() {
+  return batchEnd >= playQueue.length;
+}
+
 async function handoff() {
   clearTimeout(handoffTimer);
-  if (handoffBusy || batchEnd >= playQueue.length) return;
+  if (handoffBusy || playQueue.length === 0) return;
+  // At the end of the list we stop, unless "repeat the list" is on: then back to the top
+  if (atEndOfList() && repeatMode !== "all") return;
+  const from = atEndOfList() ? 0 : batchEnd;
   handoffBusy = true;
   try {
-    await sendBatch(batchEnd);
+    await sendBatch(from);
   } finally {
     handoffBusy = false;
   }
@@ -319,7 +342,9 @@ async function handoff() {
 
 function scheduleHandoff(state) {
   clearTimeout(handoffTimer);
-  if (batchEnd >= playQueue.length || !onLastSongOfBatch(state)) return;
+  if (repeatMode === "one") return; // Spotify itself keeps replaying this song
+  if (atEndOfList() && repeatMode !== "all") return;
+  if (!onLastSongOfBatch(state)) return;
 
   // Spotify already stopped at the end of the batch: carry on right away
   const stoppedAtEnd =
@@ -330,7 +355,7 @@ function scheduleHandoff(state) {
   }
   if (state.paused) return; // you paused it yourself: wait
 
-  const remaining = (state.duration || 0) - (state.position || 0);
+  const remaining = duration - currentPosition();
   handoffTimer = setTimeout(handoff, Math.max(0, remaining - HANDOFF_EARLY_MS));
 }
 
@@ -356,6 +381,7 @@ function togglePlayback() {
 }
 
 btnPlay.addEventListener("click", togglePlayback);
+
 // ---------- The Previous button, the way Spotify does it ----------
 const RESTART_AFTER_MS = 3000; // played longer than this: Previous restarts the song
 
@@ -402,6 +428,85 @@ function goToPrevious() {
 
 btnPrev.addEventListener("click", goToPrevious);
 btnNext.addEventListener("click", () => sdkPlayer && sdkPlayer.nextTrack());
+
+// ---------- The repeat button ----------
+// Click order, like Spotify: off -> repeat the list -> repeat this song -> off.
+// "Repeat this song" is Spotify's own. "Repeat the list" is done by us (see handoff),
+// because Spotify's own version would only loop the (up to) 100 songs it holds.
+const REPEAT_TEXT = {
+  off: "Repeat: off",
+  all: "Repeat: the whole list",
+  one: "Repeat: this song",
+};
+
+function renderRepeat() {
+  btnRepeat.innerHTML = repeatMode === "one" ? REPEAT_ICONS.one : REPEAT_ICONS.all;
+  btnRepeat.classList.toggle("active", repeatMode !== "off");
+  btnRepeat.title = REPEAT_TEXT[repeatMode];
+  btnRepeat.setAttribute("aria-label", REPEAT_TEXT[repeatMode]);
+}
+
+// Asks Spotify to repeat the current song ("track") or to stop ("off")
+async function setSpotifyRepeat(wanted) {
+  if (!deviceId) {
+    setStatus("The player isn’t ready yet. Give it a moment.", "error");
+    return false;
+  }
+  try {
+    const token = await getToken();
+    const response = await fetch(
+      `https://api.spotify.com/v1/me/player/repeat?state=${wanted}&device_id=${encodeURIComponent(deviceId)}`,
+      { method: "PUT", headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!response.ok) {
+      console.error("Repeat request failed:", response.status, await response.text());
+      setStatus(`Spotify wouldn’t change repeat (error ${response.status}).`, "error");
+      return false;
+    }
+    return true;
+  } catch (error) {
+    setStatus(error.message, "error");
+    return false;
+  }
+}
+
+async function cycleRepeat() {
+  if (repeatBusy) return;
+  repeatBusy = true;
+  try {
+    const next = repeatMode === "off" ? "all" : repeatMode === "all" ? "one" : "off";
+    // Spotify only needs to hear about it when "repeat this song" starts or stops
+    if (next === "one" || repeatMode === "one") {
+      const accepted = await setSpotifyRepeat(next === "one" ? "track" : "off");
+      if (!accepted) return;
+    }
+    repeatMode = next;
+    repeatChangedAt = performance.now();
+    renderRepeat();
+    // What should happen at the end of this song may have changed, so look again
+    if (lastState) scheduleHandoff(lastState);
+  } finally {
+    repeatBusy = false;
+  }
+}
+
+// If repeat is changed somewhere else (say, on your phone), follow along.
+// Spotify reports it as: 0 = off, 1 = repeat the list, 2 = repeat the song.
+function syncRepeatFromState(state) {
+  if (typeof state.repeat_mode !== "number") return;
+  if (performance.now() - repeatChangedAt < 2000) return; // a report from before our own click
+  let mode = repeatMode;
+  if (state.repeat_mode === 2) mode = "one";
+  else if (state.repeat_mode === 1 && repeatMode === "off") mode = "all";
+  else if (state.repeat_mode === 0 && repeatMode === "one") mode = "off";
+  if (mode !== repeatMode) {
+    repeatMode = mode;
+    renderRepeat();
+  }
+}
+
+btnRepeat.addEventListener("click", cycleRepeat);
+renderRepeat();
 
 // Spacebar = play/pause, like in Spotify. It works wherever the keyboard focus is
 // (even on a button you just clicked), except while you are typing in a text box.

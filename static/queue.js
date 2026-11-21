@@ -30,7 +30,8 @@ queueToggle.id = "btn-queue";
 queueToggle.setAttribute("aria-label", "Show queue");
 queueToggle.title = "Queue";
 queueToggle.innerHTML = ICONS.queue;
-document.querySelector(".controls").appendChild(queueToggle);
+// Left end of the row; the repeat button sits at the right end, so Play stays in the middle
+document.querySelector(".controls").prepend(queueToggle);
 
 // ---------- A small message that fades away ----------
 let toastTimer;
